@@ -1,3 +1,4 @@
+#!/usr/bin/lua
 local spars = require "./spars"
 
 local hiragana = {
