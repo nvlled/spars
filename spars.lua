@@ -171,16 +171,39 @@ function validateTable(session)
     end
 end
 
+function formatQuestion(question, questionCol, answerCol)
+    return "? " .. question
+end
+
+function formatPrompt(answerCol)
+    return answerCol .. "> "
+end
+
+function formatChoices(choices)
+    local s = "|  "
+    for i, c in pairs(choices) do
+        s = s .. "["..i..". "..c.."] "
+    end
+    return s
+end
+
 local Session = {
     table = nil,
     limit = -1,
     shuffle = true,
     indices = nil,
-    --repeatMistakes = true,
     numChoices = 3,
 
     answer = nil,
     question = nil,
+
+    showChoices = true,
+    showCorrect = true,
+    showScore = true,
+    repeatMistakes = true,
+    formatQuestion = formatQuestion,
+    formatPrompt = formatPrompt,
+    formatChoices = formatChoices,
 }
 Session.__index = Session
 
@@ -300,49 +323,21 @@ function Session:iter(fn)
     end
 end
 
-function formatQuestion(question, questionCol, answerCol)
-    return "? " .. question
-end
-
-function formatPrompt(answerCol)
-    return answerCol .. "> "
-end
-
-function formatChoices(choices)
-    local s = "|  "
-    for i, c in pairs(choices) do
-        s = s .. "["..i..". "..c.."] "
-    end
-    return s
-end
-
-local replOpts = {
-    showChoices = true,
-    showCorrect = true,
-    showScore = true,
-    repeatMistakes = true,
-    formatQuestion = formatQuestion,
-    formatPrompt = formatPrompt,
-    formatChoices = formatChoices,
-}
-
-function Session:repl(opts)
-    opts = defaults(opts, replOpts)
-
+function Session:repl()
     local mistakes = {}
     local score = 0
     local total = 0
 
     local fn = function(context)
         local choices, choiceno = context:choices()
-        print( opts.formatQuestion(context.question, context.qcol, context.acol)
+        print( self.formatQuestion(context.question, context.qcol, context.acol)
             .. "   "
-            .. when(opts.showChoices, opts.formatChoices(choices), "")
+            .. when(self.showChoices, self.formatChoices(choices), "")
         )
 
         local answer = ""
         while answer == "" do
-            io.write(opts.formatPrompt(context.acol))
+            io.write(self.formatPrompt(context.acol))
             answer = io.read()
             if answer == nil then
                 print()
@@ -352,7 +347,7 @@ function Session:repl(opts)
 
         if answer == context.answer or choiceno == tonumber(answer) then
             score = score + 1
-            if opts.showCorrect then
+            if self.showCorrect then
                 print("✓ correct")
             end
         else
@@ -364,12 +359,12 @@ function Session:repl(opts)
     end
     self:iter(fn)
 
-    if opts.repeatMistakes then
+    if self.repeatMistakes then
         self.indices = mistakes
         mistakes = {}
         self:iter(fn)
     end
-    if opts.showScore then
+    if self.showScore then
         print("Your score: " .. score, "total: " .. total)
     end
 
@@ -381,6 +376,10 @@ math.randomseed(os.time())
 return {
     create = function(args)
         return Session.create(args)
+    end,
+    startRepl = function(args)
+        local session = Session.create(args)
+        session:repl()
     end,
     pairList = pairList,
 }
