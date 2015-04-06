@@ -27,9 +27,7 @@ local session = spars.create{
     --question = "hiragana",
     --answer = "roman",
     numChoices = 4,
-}
 
-session:repl{
     showChoices = true,
     showCorrect = false,
     formatQuestion = function(question, qcol, acol)
@@ -39,3 +37,5 @@ session:repl{
         return "> "
     end
 }
+
+session:repl()

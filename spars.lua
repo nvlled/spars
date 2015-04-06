@@ -85,6 +85,19 @@ function defaults(t, defs)
     return t
 end
 
+-- Merges `t` and `m` where
+-- values in `m` takes priority.
+-- Modifies `t`.
+function extend(t, m)
+    if t == nil then
+        return m
+    end
+    for k, v in pairs(m) do
+        t[k] = v
+    end
+    return t
+end
+
 function indexOf(xs, x)
     for i, y in ipairs(xs) do
         if x == y then
@@ -150,26 +163,107 @@ function when(cond, conseq, alt)
     end
 end
 
+
+-- given a table
+--  t = {
+--   {x1, y1, z1},
+--   {x2, y2, z2},
+--   ...
+--  }
+-- Invoking select(t, 1, 2) returns
+--  {
+--   {x1, y1},
+--   {x2, y2},
+--   ...
+--  }
+function selectCols(t, kidx, vidx)
+    local u = {}
+    for _, row in ipairs(t) do
+        u[row[kidx]] = row[vidx]
+    end
+    return u
+end
+
 ------------------------------------------------------------
 
-function validateTable(session)
-    local table = session.table
-    assert(isTable(table.header), "table requires header")
-    assert(isTable(table.body), "table requires body")
-    assert(#table.header >= 2, "table must have at least two columns")
-    local headerLen = #table.header
-    for _, row in ipairs(table.body) do
-        assert(#row == headerLen, "table requires equal column size")
-    end
-    if session.question then
-        assert(indexOf(table.header, session.question) > 0,
-        "invalid question column: " .. tostring(session.question))
-    end
-    if session.answer then
-        assert(indexOf(table.header, session.answer) > 0,
-        "invalid answer column" .. tostring(session.answer))
-    end
+local cmd = (function()
+
+local sysargs = arg
+
+local str = function(x)
+    if x == nil then return "" end
+    return tostring(x)
 end
+local num = function(x)
+    if x == nil then return 0 end
+    return tonumber(x)
+end
+
+local bin = function(x)
+    if x == "false" or x == 0 or x == nil then return false end
+    return true
+end
+
+
+function stripDash(s)
+    while s:sub(1, 1) == "-" do
+        s = s:sub(2)
+    end
+    return s
+end
+
+function isOption(s)
+    return s and s:sub(1,1) == "-"
+end
+
+function parseArgs(opts)
+    local args = {}
+    local options = {}
+
+    local i = 1
+    while i <= #sysargs do
+        local s = sysargs[i]
+        if isOption(s) then
+            s = stripDash(s)
+            if s == "" then
+                goto continue
+            end
+
+            local type = opts[s]
+            if not(type) then
+                error("unrecognized option: " .. s)
+            end
+
+            if sysargs[i+1] == nil or isOption(sysargs[i+1]) then
+                if type == bin then
+                    options[s] = true
+                else
+                    error("option requires a parameter: " .. s)
+                end
+            else
+                i = i + 1
+                options[s] = type(sysargs[i])
+            end
+        else
+            args[#args+1] = s
+        end
+        ::continue::
+        i = i + 1
+    end
+
+    return options, args
+end
+
+return {
+    parseArgs = parseArgs,
+    str = str,
+    num = num,
+    bin = bin,
+}
+
+end) ()
+
+------------------------------------------------------------
 
 function formatQuestion(question, questionCol, answerCol)
     return "? " .. question
@@ -192,26 +286,53 @@ local Session = {
     limit = -1,
     shuffle = true,
     indices = nil,
-    numChoices = 3,
+    useCmdArgs = true,
 
-    answer = nil,
-    question = nil,
-
-    showChoices = true,
-    showCorrect = true,
-    showScore = true,
-    repeatMistakes = true,
     formatQuestion = formatQuestion,
     formatPrompt = formatPrompt,
     formatChoices = formatChoices,
 }
 Session.__index = Session
 
+local opts = {
+    {"answer",          cmd.str,   ""},
+    {"question",        cmd.str,   ""},
+    {"numChoices",      cmd.num,   3},
+    {"showChoices",     cmd.bin,   true},
+    {"showCorrect",     cmd.bin,   true},
+    {"showScore",       cmd.bin,   true},
+    {"repeatMistakes",  cmd.bin,   true},
+}
+
+function validateTable(session)
+    local table = session.table
+    assert(isTable(table.header), "table requires header")
+    assert(isTable(table.body), "table requires body")
+    assert(#table.header >= 2, "table must have at least two columns")
+    local headerLen = #table.header
+    for _, row in ipairs(table.body) do
+        assert(#row == headerLen, "table requires equal column size")
+    end
+    if session.question ~= "" then
+        assert(indexOf(table.header, session.question) > 0,
+        "invalid question column: " .. tostring(session.question))
+    end
+    if session.answer ~= "" then
+        assert(indexOf(table.header, session.answer) > 0,
+        "invalid answer column: " .. tostring(session.answer))
+    end
+end
+
 function Session.create(o)
     o = o or {}
     setmetatable(o, Session)
 
+    extend(o, selectCols(opts, 1, 3))
+    if o.useCmdArgs then
+        extend(o, cmd.parseArgs(selectCols(opts, 1, 2)))
+    end
     validateTable(o)
+
     local t = o.table
     if o.indices == nil then
         if o.shuffle then
@@ -255,10 +376,10 @@ function Session:getQuestionAnswer()
     local header = self.table.header
     local question, answer
     -- ensure that question header ~= answer header
-    if not(self.question) and not(self.answer) then
+    if self.question == "" and self.answer == "" then
         question = randomSelect(header)
         answer = randomSelect(header, question)
-    elseif not(self.question) then
+    elseif self.question == "" then
         answer = self.answer
         question = randomSelect(header, answer)
     else
